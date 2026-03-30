@@ -1,0 +1,15 @@
+html, body, #root {
+  margin: 0;
+  height: 100%;
+  background: black;
+  color: white;
+  font-family: monospace;
+}
+
+button {
+  background: black;
+  color: white;
+  border: 1px solid #555;
+  padding: 8px;
+  cursor: pointer;
+}
