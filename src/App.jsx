@@ -470,7 +470,7 @@ function App() {
     const tickTimer = setInterval(() => setSplashTick((v) => v + 1), 280);
     const doneTimer = setTimeout(() => {
       setGame((prev) => ({ ...prev, screen: "title" }));
-    }, 3200);
+    }, 5200);
     return () => {
       clearInterval(tickTimer);
       clearTimeout(doneTimer);
@@ -511,7 +511,7 @@ function App() {
     const doneTimer = setTimeout(() => {
       setGame((prev) => ({ ...prev, transition: null, screen: "playing" }));
       setWalkerStep(0);
-    }, 1800);
+    }, 3000);
     return () => {
       clearInterval(walkerTimer);
       clearTimeout(doneTimer);
@@ -1030,12 +1030,12 @@ function App() {
         {game.screen === "splash" && (
           <div className="absolute inset-0 z-40 bg-black flex items-center justify-center px-4">
             <div className={`w-full max-w-2xl border border-white/20 rounded-[28px] p-5 sm:p-7 scanlines crt ${splashInvert ? "bg-white text-black" : "bg-black text-white"}`}>
-              <pre className={`text-[11px] sm:text-sm md:text-base leading-[1.05rem] sm:leading-5 whitespace-pre-wrap text-center ${splashInvert ? "" : "flicker"}`}>
+              <pre className={`text-[14px] sm:text-xl md:text-2xl leading-[1.2rem] sm:leading-8 md:leading-10 whitespace-pre-wrap text-center ${splashInvert ? "" : "flicker"}`}>
                 {SPLASH_ART.join("\n")}
               </pre>
-              <div className="mt-5 text-center">
-                <div className="text-3xl sm:text-5xl font-bold tracking-[0.22em] pulseGlow">CITY SIGNAL</div>
-                <div className="mt-3 text-sm sm:text-lg tracking-[0.25em] uppercase opacity-80">
+              <div className="mt-7 text-center">
+                <div className="text-4xl sm:text-6xl md:text-7xl font-bold tracking-[0.24em] pulseGlow">CITY SIGNAL</div>
+                <div className="mt-4 text-base sm:text-xl md:text-2xl tracking-[0.25em] uppercase opacity-80">
                   The city remembers below the surface
                 </div>
               </div>
@@ -1045,16 +1045,16 @@ function App() {
 
         {game.transition && (
           <div className="absolute inset-0 z-30 bg-black/95 flex items-center justify-center px-4">
-            <div className="w-full max-w-2xl text-center scanlines crt rounded-[28px] border border-white/20 p-6 sm:p-8">
+            <div className="w-full max-w-3xl text-center scanlines crt rounded-[28px] border border-white/20 p-8 sm:p-10 md:p-12">
               <div className="text-white/40 text-xs sm:text-sm tracking-[0.4em] uppercase scramble">{scrambleLine}</div>
-              <div className="mt-4 text-3xl sm:text-5xl md:text-6xl font-bold zoomFade tracking-[0.18em]">{game.transition.title}</div>
-              <div className="mt-4 text-sm sm:text-lg md:text-xl tracking-[0.22em] uppercase text-white/75">
+              <div className="mt-5 text-4xl sm:text-6xl md:text-7xl font-bold zoomFade tracking-[0.2em]">{game.transition.title}</div>
+              <div className="mt-5 text-base sm:text-xl md:text-2xl tracking-[0.22em] uppercase text-white/75">
                 {game.transition.subtitle}
               </div>
-              <div className="mt-8 mx-auto max-w-md border-t border-white/15 pt-5">
-                <pre className="text-base sm:text-xl walker leading-none">{walkerLine}</pre>
+              <div className="mt-10 mx-auto max-w-xl border-t border-white/15 pt-6">
+                <pre className="text-xl sm:text-3xl md:text-4xl walker leading-none">{walkerLine}</pre>
               </div>
-              <div className="mt-5 text-white/45 text-xs sm:text-sm tracking-[0.28em] uppercase">Signal pattern reassembling</div>
+              <div className="mt-6 text-white/45 text-sm sm:text-base tracking-[0.28em] uppercase">Signal pattern reassembling</div>
             </div>
           </div>
         )}
