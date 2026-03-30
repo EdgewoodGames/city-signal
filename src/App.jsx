@@ -1,19 +1,17 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 
 /**
- * CITY SIGNAL - single-file React MVP
+ * CITY SIGNAL - single-file React MVP (enhanced mobile-first version)
  *
- * Features:
- * - ASCII map zones
- * - Keyboard + touch controls
- * - Core phase signals, milestone signals, behavior signals, rare signals, and sequences
- * - Signal log and pause/menu screens
- * - Local save via localStorage
- *
- * Drop into a React app (Vite recommended) as App.jsx and run.
+ * Added polish:
+ * - Larger text and buttons for phones
+ * - Animated splash / entry screen with flashing ASCII art
+ * - Zone transition overlay with dissolve / scramble feel
+ * - Little ASCII walker across transition screen
+ * - Slightly more cinematic presentation overall
  */
 
-const STORAGE_KEY = "city-signal-save-v1";
+const STORAGE_KEY = "city-signal-save-v2";
 
 const TILE = {
   WALL: "#",
@@ -69,7 +67,7 @@ const ZONES = [
       "#..####......#..#",
       "#......?......S.#",
       "#..#........#...#",
-      "#..#....D...#...#",
+      "#..#....D...#..S#",
       "#################",
     ],
   },
@@ -83,7 +81,7 @@ const ZONES = [
       "#..##.#.........#",
       "#..S..#..?..##..#",
       "#......#........#",
-      "#..D...#.....S..#",
+      "#..D...#....S...#",
       "#################",
     ],
   },
@@ -97,7 +95,7 @@ const ZONES = [
       "#..###......#...#",
       "#.....?..S......#",
       "#..#........###.#",
-      "#..#....D.......#",
+      "#..#....D.....S.#",
       "#################",
     ],
   },
@@ -321,6 +319,19 @@ const SEQUENCES = [
   },
 ];
 
+const SPLASH_ART = [
+  "   .-=-=-=-=-=-=-=-=-=-=-=-.   ",
+  "   |   C I T Y  S I G N A L |   ",
+  "   '-=-=-=-=-=-=-=-=-=-=-=-'   ",
+  "       .  .  .  .  .  .        ",
+  "     __|__|__|__|__|__|__      ",
+  "    /__/__/__/__/__/__/ /|     ",
+  "    |  .-.  .-.  .-.  | |      ",
+  "    |  |_|  |_|  |_|  | |      ",
+  "    |   SIGNALS BELOW | /      ",
+  "    '-----------------'        ",
+];
+
 function cloneMap(zone) {
   return zone.map.map((row) => row.split(""));
 }
@@ -383,7 +394,7 @@ function getInitialGameState() {
   const cleaned = replaceTile(grid, start.x, start.y, TILE.FLOOR);
 
   return {
-    screen: "title",
+    screen: "splash",
     zoneIndex,
     player: start,
     maps: {
@@ -419,6 +430,7 @@ function getInitialGameState() {
     },
     lastMoveAt: Date.now(),
     sessionStartAt: Date.now(),
+    transition: null,
   };
 }
 
@@ -429,6 +441,10 @@ function App() {
   });
   const [showLog, setShowLog] = useState(false);
   const [showClues, setShowClues] = useState(false);
+  const [splashTick, setSplashTick] = useState(0);
+  const [walkerStep, setWalkerStep] = useState(0);
+  const [messageRender, setMessageRender] = useState("");
+  const [messageGlitch, setMessageGlitch] = useState(false);
   const stillTimer = useRef(null);
 
   const zone = ZONES[game.zoneIndex];
@@ -450,7 +466,61 @@ function App() {
   }, [game]);
 
   useEffect(() => {
+    if (game.screen !== "splash") return undefined;
+    const tickTimer = setInterval(() => setSplashTick((v) => v + 1), 280);
+    const doneTimer = setTimeout(() => {
+      setGame((prev) => ({ ...prev, screen: "title" }));
+    }, 3200);
+    return () => {
+      clearInterval(tickTimer);
+      clearTimeout(doneTimer);
+    };
+  }, [game.screen]);
+
+  useEffect(() => {
+    if (game.popup?.kind !== "signal") {
+      setMessageRender(game.popup?.text || "");
+      setMessageGlitch(false);
+      return undefined;
+    }
+
+    setMessageRender("");
+    setMessageGlitch(true);
+
+    const glitchTimer = setTimeout(() => {
+      setMessageGlitch(false);
+      const fullText = game.popup.text || "";
+      let index = 0;
+      const typer = setInterval(() => {
+        index += 1;
+        setMessageRender(fullText.slice(0, index));
+        if (index >= fullText.length) {
+          clearInterval(typer);
+        }
+      }, 22 + Math.floor(Math.random() * 18));
+
+      return () => clearInterval(typer);
+    }, 260);
+
+    return () => clearTimeout(glitchTimer);
+  }, [game.popup]);
+
+  useEffect(() => {
+    if (!game.transition) return undefined;
+    const walkerTimer = setInterval(() => setWalkerStep((v) => v + 1), 140);
+    const doneTimer = setTimeout(() => {
+      setGame((prev) => ({ ...prev, transition: null, screen: "playing" }));
+      setWalkerStep(0);
+    }, 1800);
+    return () => {
+      clearInterval(walkerTimer);
+      clearTimeout(doneTimer);
+    };
+  }, [game.transition]);
+
+  useEffect(() => {
     function handleKeyDown(event) {
+      if (game.screen === "splash") return;
       if (game.screen === "title") {
         if (event.key === "Enter") startGame();
         return;
@@ -474,7 +544,7 @@ function App() {
         setGame((prev) => ({ ...prev, screen: prev.screen === "paused" ? "playing" : "paused" }));
         return;
       }
-      if (game.screen !== "playing" || showLog || showClues) return;
+      if (game.screen !== "playing" || showLog || showClues || game.transition) return;
 
       const moves = {
         ArrowUp: { dx: 0, dy: -1, dir: "U" },
@@ -493,7 +563,7 @@ function App() {
   }, [game, showLog, showClues]);
 
   useEffect(() => {
-    if (game.screen !== "playing" || game.popup) return undefined;
+    if (game.screen !== "playing" || game.popup || game.transition) return undefined;
     if (stillTimer.current) clearTimeout(stillTimer.current);
     stillTimer.current = setTimeout(() => {
       tryBehaviorSignal("still");
@@ -501,10 +571,17 @@ function App() {
     return () => {
       if (stillTimer.current) clearTimeout(stillTimer.current);
     };
-  }, [game.player, game.screen, game.popup]);
+  }, [game.player, game.screen, game.popup, game.transition]);
 
   function startGame() {
-    setGame((prev) => ({ ...prev, screen: "playing" }));
+    setGame((prev) => ({
+      ...prev,
+      transition: {
+        title: zone.name.toUpperCase(),
+        subtitle: "THE SURFACE FLICKERS",
+      },
+      screen: "transition",
+    }));
   }
 
   function resetGame() {
@@ -512,6 +589,8 @@ function App() {
     setGame(fresh);
     setShowLog(false);
     setShowClues(false);
+    setSplashTick(0);
+    setWalkerStep(0);
     localStorage.setItem(STORAGE_KEY, serializeState(fresh));
   }
 
@@ -519,16 +598,16 @@ function App() {
     setGame((prev) => ({ ...prev, popup: null }));
   }
 
-  function setPopup(title, text, kind = "signal") {
-    setGame((prev) => ({
-      ...prev,
-      popup: { title, text, kind },
-    }));
-  }
-
-  function ensureZoneMap(zoneIndex) {
-    const z = ZONES[zoneIndex];
-    return game.maps[z.id] || replaceTile(cloneMap(z), findStart(cloneMap(z)).x, findStart(cloneMap(z)).y, TILE.FLOOR);
+  function tryBehaviorSignal(kind) {
+    setGame((prev) => {
+      if (prev.popup || prev.screen !== "playing") return prev;
+      const text = randomChoice(BEHAVIOR_SIGNALS[kind] || []);
+      if (!text) return prev;
+      return {
+        ...prev,
+        popup: { title: "SIGNAL RECEIVED", text, kind: "signal" },
+      };
+    });
   }
 
   function movePlayer({ dx, dy, dir }) {
@@ -583,13 +662,25 @@ function App() {
       }
 
       if (target === TILE.DOOR) {
-        const nextZoneIndex = Math.min(prev.zoneIndex + 1, ZONES.length - 1);
-        if (nextZoneIndex === prev.zoneIndex) {
+        const currentZoneSignalTiles = grid.flat().filter((t) => t === TILE.SIGNAL).length;
+        if (currentZoneSignalTiles > 0) {
           updated.popup = {
-            title: "EDGE OF THE CITY",
-            text: "For now, this is as far as the signal reaches.",
+            title: "SIGNAL FIELD INCOMPLETE",
+            text: "There are still signals left in this district.",
             kind: "system",
           };
+          return updated;
+        }
+
+        const nextZoneIndex = Math.min(prev.zoneIndex + 1, ZONES.length - 1);
+        if (nextZoneIndex === prev.zoneIndex) {
+          updated.transition = {
+            title: "THE SIGNAL HOLDS",
+            subtitle: "FOR NOW, YOU HAVE REACHED THE EDGE",
+            end: true,
+          };
+          updated.screen = "transition";
+          updated.popup = null;
           return updated;
         }
 
@@ -601,21 +692,22 @@ function App() {
           nextGrid = replaceTile(fresh, start.x, start.y, TILE.FLOOR);
         }
         const nextStart = findStart(cloneMap(nextZone));
-        const revisiting = prev.visitedZones.includes(nextZone.id);
 
         return {
           ...updated,
           zoneIndex: nextZoneIndex,
           player: nextStart,
           maps: { ...updated.maps, [nextZone.id]: nextGrid },
-          visitedZones: revisiting ? prev.visitedZones : [...prev.visitedZones, nextZone.id],
-          popup: revisiting
-            ? pickBehaviorPopup("revisit", updated)
-            : {
-                title: nextZone.name.toUpperCase(),
-                text: `You enter ${nextZone.name}.`,
-                kind: "system",
-              },
+          visitedZones: prev.visitedZones.includes(nextZone.id)
+            ? prev.visitedZones
+            : [...prev.visitedZones, nextZone.id],
+          transition: {
+            title: nextZone.name.toUpperCase(),
+            subtitle: `PHASE ${getPhase(updated.stats.signalsFound, Object.values(updated.sequenceProgress).reduce((a, b) => a + b, 0))} // SIGNAL REALIGNS`,
+          },
+          screen: "transition",
+          popup: null,
+          lastMoveAt: Date.now(),
         };
       }
 
@@ -632,14 +724,14 @@ function App() {
 
     if (now - state.lastMoveAt > 3000 && moves >= cooldowns.hesitationUntilMove) {
       state.behaviorCooldowns = { ...cooldowns, hesitationUntilMove: moves + 20 };
-      return pickBehaviorPopup("hesitation", state);
+      return pickBehaviorPopup("hesitation");
     }
 
     const reversals = dirs.slice(-4).join("");
-    const reversedPatterns = ["LRLR", "RLRL", "UDUD", "DUDU", "L R L R", "U D U D"];
+    const reversedPatterns = ["LRLR", "RLRL", "UDUD", "DUDU"];
     if (reversedPatterns.includes(reversals) && moves >= cooldowns.backtrackUntilMove) {
       state.behaviorCooldowns = { ...cooldowns, backtrackUntilMove: moves + 20 };
-      return pickBehaviorPopup("backtrack", state);
+      return pickBehaviorPopup("backtrack");
     }
 
     if (history.length >= 12) {
@@ -647,19 +739,18 @@ function App() {
       const unique = new Set(last12);
       if (unique.size <= 4 && moves >= cooldowns.loopUntilMove) {
         state.behaviorCooldowns = { ...cooldowns, loopUntilMove: moves + 25 };
-        return pickBehaviorPopup("loop", state);
+        return pickBehaviorPopup("loop");
       }
     }
 
-    if (state.visitedZones.filter((z) => z === activeZone.id).length > 1 && moves >= cooldowns.revisitUntilMove) {
-      state.behaviorCooldowns = { ...cooldowns, revisitUntilMove: moves + 25 };
-      return pickBehaviorPopup("revisit", state);
+    if (state.visitedZones.includes(activeZone.id) && moves > 4 && moves >= cooldowns.revisitUntilMove) {
+      return null;
     }
 
     return null;
   }
 
-  function pickBehaviorPopup(kind, state) {
+  function pickBehaviorPopup(kind) {
     const text = randomChoice(BEHAVIOR_SIGNALS[kind] || ["THE CITY NOTICED SOMETHING"]);
     return { title: "SIGNAL RECEIVED", text, kind: "signal" };
   }
@@ -843,24 +934,140 @@ function App() {
   }
 
   const gridLines = renderGrid();
+  const splashInvert = splashTick % 2 === 0;
+  const walkerWidth = 28;
+  const walkerOffset = walkerStep % walkerWidth;
+  const walkerLine = `${" ".repeat(walkerOffset)}@${" ".repeat(Math.max(0, walkerWidth - walkerOffset - 1))}`;
+  const scrambleLine = ["#", ".", ":", "+", "*", "~", "=", "%", "|"]
+    .map((_, i) => (i < 18 ? randomChoice(["#", ".", ":", "+", "*", "~", "=", "%", "|"]) : " "))
+    .join("");
 
   return (
-    <div className="min-h-screen bg-black text-white p-4 font-mono flex items-center justify-center">
-      <div className="w-full max-w-3xl rounded-3xl border border-white/20 shadow-2xl p-4 md:p-6 bg-black">
+    <div className="min-h-screen bg-black text-white p-2 sm:p-4 font-mono flex items-center justify-center overflow-hidden">
+      <div className="w-full max-w-4xl rounded-[28px] border border-white/20 shadow-2xl p-3 sm:p-5 md:p-6 bg-black relative overflow-hidden">
         <style>{`
-          .crt { text-shadow: 0 0 8px rgba(255,255,255,0.12); }
-          .scanlines { background-image: linear-gradient(rgba(255,255,255,0.03) 1px, transparent 1px); background-size: 100% 4px; }
-          .btn { border: 1px solid rgba(255,255,255,0.25); padding: 0.65rem 0.9rem; border-radius: 1rem; }
+          .crt { text-shadow: 0 0 10px rgba(255,255,255,0.16); }
+          .scanlines {
+            background-image: linear-gradient(rgba(255,255,255,0.03) 1px, transparent 1px);
+            background-size: 100% 4px;
+          }
+          .btn {
+            border: 1px solid rgba(255,255,255,0.28);
+            padding: 0.95rem 1rem;
+            border-radius: 1rem;
+            min-height: 56px;
+            font-size: 1rem;
+            letter-spacing: 0.04em;
+          }
           .btn:active { transform: scale(0.98); }
+          .flicker { animation: flicker 0.18s step-end infinite alternate; }
+          .pulseGlow { animation: pulseGlow 1.8s ease-in-out infinite; }
+          .scramble { animation: scramble 1.6s linear infinite; }
+          .zoomFade { animation: zoomFade 1.8s ease-in-out both; }
+          .walker { animation: walkerFloat 0.5s ease-in-out infinite alternate; }
+          .messagePanel { position: relative; overflow: hidden; }
+          .messagePanel::before {
+            content: "";
+            position: absolute;
+            inset: 0;
+            background: radial-gradient(circle at center, rgba(255,255,255,0.05), transparent 68%);
+            opacity: 0.55;
+            pointer-events: none;
+          }
+          .messageDim {
+            animation: messageDim 1.5s ease-in-out infinite;
+          }
+          .typeCursor::after {
+            content: "_";
+            display: inline-block;
+            margin-left: 2px;
+            animation: blink 0.8s step-end infinite;
+          }
+          .glitchNoise {
+            letter-spacing: 0.2em;
+            opacity: 0.8;
+            animation: scramble 0.35s linear infinite;
+          }
+          .signalTitlePulse {
+            animation: signalTitlePulse 1.4s ease-in-out infinite;
+          }
+          @keyframes flicker {
+            0% { opacity: 1; }
+            100% { opacity: 0.78; }
+          }
+          @keyframes pulseGlow {
+            0%,100% { opacity: 0.85; transform: scale(1); }
+            50% { opacity: 1; transform: scale(1.02); }
+          }
+          @keyframes scramble {
+            0% { opacity: 0.45; transform: scale(0.98); filter: blur(0px); }
+            50% { opacity: 1; transform: scale(1.03); filter: blur(0.3px); }
+            100% { opacity: 0.5; transform: scale(0.98); filter: blur(0px); }
+          }
+          @keyframes zoomFade {
+            0% { opacity: 0; transform: scale(0.82); letter-spacing: 0.08em; }
+            35% { opacity: 1; transform: scale(1.1); letter-spacing: 0.2em; }
+            100% { opacity: 1; transform: scale(1); letter-spacing: 0.08em; }
+          }
+          @keyframes walkerFloat {
+            0% { transform: translateY(0px); }
+            100% { transform: translateY(-1px); }
+          }
+          @keyframes blink {
+            0%, 49% { opacity: 1; }
+            50%, 100% { opacity: 0; }
+          }
+          @keyframes messageDim {
+            0%,100% { box-shadow: inset 0 0 0 rgba(255,255,255,0.0), 0 0 0 rgba(255,255,255,0.0); }
+            50% { box-shadow: inset 0 0 32px rgba(255,255,255,0.05), 0 0 24px rgba(255,255,255,0.06); }
+          }
+          @keyframes signalTitlePulse {
+            0%,100% { opacity: 0.72; letter-spacing: 0.14em; }
+            50% { opacity: 1; letter-spacing: 0.18em; }
+          }
         `}</style>
 
-        {game.screen === "title" ? (
-          <div className="crt scanlines text-center space-y-6 py-16">
-            <div>
-              <div className="text-3xl md:text-5xl tracking-widest">CITY SIGNAL</div>
-              <div className="mt-3 text-white/60">A terminal dream beneath the city.</div>
+        {game.screen === "splash" && (
+          <div className="absolute inset-0 z-40 bg-black flex items-center justify-center px-4">
+            <div className={`w-full max-w-2xl border border-white/20 rounded-[28px] p-5 sm:p-7 scanlines crt ${splashInvert ? "bg-white text-black" : "bg-black text-white"}`}>
+              <pre className={`text-[11px] sm:text-sm md:text-base leading-[1.05rem] sm:leading-5 whitespace-pre-wrap text-center ${splashInvert ? "" : "flicker"}`}>
+                {SPLASH_ART.join("\n")}
+              </pre>
+              <div className="mt-5 text-center">
+                <div className="text-3xl sm:text-5xl font-bold tracking-[0.22em] pulseGlow">CITY SIGNAL</div>
+                <div className="mt-3 text-sm sm:text-lg tracking-[0.25em] uppercase opacity-80">
+                  The city remembers below the surface
+                </div>
+              </div>
             </div>
-            <div className="space-y-3 max-w-sm mx-auto">
+          </div>
+        )}
+
+        {game.transition && (
+          <div className="absolute inset-0 z-30 bg-black/95 flex items-center justify-center px-4">
+            <div className="w-full max-w-2xl text-center scanlines crt rounded-[28px] border border-white/20 p-6 sm:p-8">
+              <div className="text-white/40 text-xs sm:text-sm tracking-[0.4em] uppercase scramble">{scrambleLine}</div>
+              <div className="mt-4 text-3xl sm:text-5xl md:text-6xl font-bold zoomFade tracking-[0.18em]">{game.transition.title}</div>
+              <div className="mt-4 text-sm sm:text-lg md:text-xl tracking-[0.22em] uppercase text-white/75">
+                {game.transition.subtitle}
+              </div>
+              <div className="mt-8 mx-auto max-w-md border-t border-white/15 pt-5">
+                <pre className="text-base sm:text-xl walker leading-none">{walkerLine}</pre>
+              </div>
+              <div className="mt-5 text-white/45 text-xs sm:text-sm tracking-[0.28em] uppercase">Signal pattern reassembling</div>
+            </div>
+          </div>
+        )}
+
+        {game.screen === "title" ? (
+          <div className="crt scanlines text-center space-y-7 py-16 sm:py-24">
+            <div>
+              <div className="text-4xl sm:text-6xl tracking-[0.26em] font-bold pulseGlow">CITY SIGNAL</div>
+              <div className="mt-4 text-base sm:text-xl text-white/65 tracking-[0.16em] uppercase">
+                A terminal dream beneath the city
+              </div>
+            </div>
+            <div className="space-y-3 max-w-md mx-auto">
               <button className="btn w-full" onClick={startGame}>
                 &gt; START
               </button>
@@ -871,16 +1078,16 @@ function App() {
                 RESET
               </button>
             </div>
-            <div className="text-xs text-white/50">Press Enter to start</div>
+            <div className="text-sm sm:text-base text-white/50 tracking-[0.16em] uppercase">Press Enter to start</div>
           </div>
         ) : (
           <div className="crt scanlines space-y-4">
-            <div className="border border-white/20 rounded-2xl p-3 md:p-4">
-              <div className="flex flex-wrap gap-3 justify-between text-sm md:text-base">
+            <div className="border border-white/20 rounded-2xl p-4 sm:p-5">
+              <div className="flex flex-wrap gap-3 justify-between text-base sm:text-lg md:text-xl">
                 <div>ZONE: {zone.name.toUpperCase()}</div>
                 <div>PHASE: {currentPhase}</div>
               </div>
-              <div className="flex flex-wrap gap-4 mt-2 text-sm text-white/80">
+              <div className="grid grid-cols-2 sm:flex sm:flex-wrap gap-3 sm:gap-5 mt-3 text-base sm:text-lg text-white/80">
                 <div>SIG: {game.stats.signalsFound}</div>
                 <div>HP: {game.stats.hp}</div>
                 <div>SEQ: {Object.values(game.sequenceProgress).reduce((a, b) => a + b, 0)}</div>
@@ -888,22 +1095,30 @@ function App() {
               </div>
             </div>
 
-            <div className="border border-white/20 rounded-2xl p-3 md:p-4 overflow-auto">
-              <pre className="text-sm md:text-lg leading-5 md:leading-6 whitespace-pre-wrap break-normal">{gridLines.join("\n")}</pre>
+            <div className="border border-white/20 rounded-2xl p-3 sm:p-5 overflow-auto">
+              <pre className="text-[18px] sm:text-[22px] md:text-[26px] leading-[1.25] whitespace-pre-wrap break-normal text-center sm:text-left">{gridLines.join("\n")}</pre>
             </div>
 
-            <div className="border border-white/20 rounded-2xl p-3 md:p-4 min-h-24">
+            <div className="border border-white/20 rounded-2xl p-4 sm:p-5 min-h-32 sm:min-h-36 messagePanel ${game.popup?.kind === 'signal' ? 'messageDim' : ''}">
               {game.popup ? (
-                <div className="space-y-2">
-                  <div className="text-white/70">&gt; {game.popup.title}</div>
-                  <div className="text-lg">{game.popup.text}</div>
-                  <div className="text-xs text-white/50">Press Enter or tap Continue</div>
-                  <button className="btn mt-2" onClick={closePopup}>CONTINUE</button>
+                <div className="space-y-3 relative z-10">
+                  <div className={`text-white/70 text-sm sm:text-base tracking-[0.14em] uppercase ${game.popup.kind === "signal" ? "signalTitlePulse" : ""}`}>&gt; {game.popup.title}</div>
+                  {game.popup.kind === "signal" && messageGlitch ? (
+                    <div className="text-xl sm:text-2xl md:text-3xl leading-snug glitchNoise">
+                      {Array.from({ length: Math.max(18, Math.min((game.popup.text || "").length, 34)) }, () => randomChoice(["#", ".", ":", "+", "*", "~", "=", "%", "|"])).join("")}
+                    </div>
+                  ) : (
+                    <div className={`text-xl sm:text-2xl md:text-3xl leading-snug ${game.popup.kind === "signal" && messageRender !== game.popup.text ? "typeCursor" : ""}`}>
+                      {game.popup.kind === "signal" ? messageRender : game.popup.text}
+                    </div>
+                  )}
+                  <div className="text-xs sm:text-sm text-white/50 tracking-[0.08em] uppercase">Press Enter or tap Continue</div>
+                  <button className="btn mt-2 w-full sm:w-auto" onClick={closePopup}>CONTINUE</button>
                 </div>
               ) : game.screen === "paused" ? (
-                <div className="space-y-2">
-                  <div>&gt; PAUSED</div>
-                  <div className="flex flex-wrap gap-2">
+                <div className="space-y-3">
+                  <div className="text-lg sm:text-2xl tracking-[0.14em] uppercase">&gt; PAUSED</div>
+                  <div className="flex flex-col sm:flex-row flex-wrap gap-2">
                     <button className="btn" onClick={() => setGame((prev) => ({ ...prev, screen: "playing" }))}>RESUME</button>
                     <button className="btn" onClick={() => setShowLog((v) => !v)}>SIGNAL LOG</button>
                     <button className="btn" onClick={() => setShowClues((v) => !v)}>CLUES</button>
@@ -911,20 +1126,22 @@ function App() {
                   </div>
                 </div>
               ) : (
-                <div className="text-white/70">Use arrow keys or touch controls. L = log, C = clues, Esc = pause.</div>
+                <div className="text-base sm:text-lg text-white/70 leading-relaxed">
+                  Use arrow keys or touch controls. L = log, C = clues, Esc = pause.
+                </div>
               )}
             </div>
 
-            <div className="grid grid-cols-3 gap-2 max-w-xs mx-auto pt-2">
+            <div className="grid grid-cols-3 gap-2 max-w-sm mx-auto pt-2 w-full">
               <div />
-              <button className="btn" onClick={() => game.screen === "playing" && !game.popup && movePlayer({ dx: 0, dy: -1, dir: "U" })}>↑</button>
+              <button className="btn text-2xl sm:text-3xl" onClick={() => game.screen === "playing" && !game.popup && !game.transition && movePlayer({ dx: 0, dy: -1, dir: "U" })}>↑</button>
               <div />
-              <button className="btn" onClick={() => game.screen === "playing" && !game.popup && movePlayer({ dx: -1, dy: 0, dir: "L" })}>←</button>
-              <button className="btn" onClick={() => game.screen === "playing" && !game.popup && movePlayer({ dx: 0, dy: 1, dir: "D" })}>↓</button>
-              <button className="btn" onClick={() => game.screen === "playing" && !game.popup && movePlayer({ dx: 1, dy: 0, dir: "R" })}>→</button>
+              <button className="btn text-2xl sm:text-3xl" onClick={() => game.screen === "playing" && !game.popup && !game.transition && movePlayer({ dx: -1, dy: 0, dir: "L" })}>←</button>
+              <button className="btn text-2xl sm:text-3xl" onClick={() => game.screen === "playing" && !game.popup && !game.transition && movePlayer({ dx: 0, dy: 1, dir: "D" })}>↓</button>
+              <button className="btn text-2xl sm:text-3xl" onClick={() => game.screen === "playing" && !game.popup && !game.transition && movePlayer({ dx: 1, dy: 0, dir: "R" })}>→</button>
             </div>
 
-            <div className="flex flex-wrap gap-2 justify-center pt-2">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-2">
               <button className="btn" onClick={() => setShowLog((v) => !v)}>SIGNAL LOG</button>
               <button className="btn" onClick={() => setShowClues((v) => !v)}>CLUES</button>
               <button className="btn" onClick={() => setGame((prev) => ({ ...prev, screen: prev.screen === "paused" ? "playing" : "paused" }))}>
@@ -935,42 +1152,42 @@ function App() {
         )}
 
         {showLog && (
-          <div className="mt-4 border border-white/20 rounded-2xl p-4">
-            <div className="flex items-center justify-between mb-3">
-              <div className="text-xl">SIGNAL LOG</div>
+          <div className="mt-4 border border-white/20 rounded-2xl p-4 sm:p-5">
+            <div className="flex items-center justify-between mb-3 gap-2">
+              <div className="text-2xl sm:text-3xl tracking-[0.14em]">SIGNAL LOG</div>
               <button className="btn" onClick={() => setShowLog(false)}>CLOSE</button>
             </div>
-            <div className="space-y-2 max-h-72 overflow-auto">
+            <div className="space-y-2 max-h-80 overflow-auto">
               {game.signalLog.length ? (
                 game.signalLog.map((entry) => (
-                  <div key={`${entry.id}-${entry.index}`} className="border border-white/10 rounded-xl p-3">
-                    <div className="text-white/60 text-xs">[{String(entry.index).padStart(2, "0")}] {entry.zone} · PHASE {entry.phase}</div>
-                    <div className="mt-1">{entry.text}</div>
+                  <div key={`${entry.id}-${entry.index}`} className="border border-white/10 rounded-xl p-3 sm:p-4">
+                    <div className="text-white/60 text-xs sm:text-sm tracking-[0.08em] uppercase">[{String(entry.index).padStart(2, "0")}] {entry.zone} · PHASE {entry.phase}</div>
+                    <div className="mt-2 text-lg sm:text-xl">{entry.text}</div>
                   </div>
                 ))
               ) : (
-                <div className="text-white/60">No signals logged yet.</div>
+                <div className="text-white/60 text-base sm:text-lg">No signals logged yet.</div>
               )}
             </div>
           </div>
         )}
 
         {showClues && (
-          <div className="mt-4 border border-white/20 rounded-2xl p-4">
-            <div className="flex items-center justify-between mb-3">
-              <div className="text-xl">CLUES</div>
+          <div className="mt-4 border border-white/20 rounded-2xl p-4 sm:p-5">
+            <div className="flex items-center justify-between mb-3 gap-2">
+              <div className="text-2xl sm:text-3xl tracking-[0.14em]">CLUES</div>
               <button className="btn" onClick={() => setShowClues(false)}>CLOSE</button>
             </div>
-            <div className="space-y-2 max-h-72 overflow-auto">
+            <div className="space-y-2 max-h-80 overflow-auto">
               {game.clueLog.length ? (
                 game.clueLog.map((clue, index) => (
-                  <div key={`${clue}-${index}`} className="border border-white/10 rounded-xl p-3">
-                    <div className="text-white/60 text-xs">CLUE {index + 1}</div>
-                    <div className="mt-1">{clue}</div>
+                  <div key={`${clue}-${index}`} className="border border-white/10 rounded-xl p-3 sm:p-4">
+                    <div className="text-white/60 text-xs sm:text-sm tracking-[0.08em] uppercase">CLUE {index + 1}</div>
+                    <div className="mt-2 text-lg sm:text-xl leading-relaxed">{clue}</div>
                   </div>
                 ))
               ) : (
-                <div className="text-white/60">No clues collected yet.</div>
+                <div className="text-white/60 text-base sm:text-lg">No clues collected yet.</div>
               )}
             </div>
           </div>
